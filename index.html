@@ -47,7 +47,7 @@ h1{font-size:clamp(28px,4vw,43px);line-height:1.12;letter-spacing:-1.2px;margin:
   <p style="font-size:10px;color:#7485a3">Use a unique password. This is a small private-group project, not a public account service.</p>
  </section>
 </div>
-<iframe id="cloudBridge" title="Cloud sync connection" src="https://script.google.com/macros/s/AKfycbzjlRyJtWVorea4W_dag2TMhfYVRDtmsXqXfB9W_fnnVO-Hru9rL1lerpHVesmMnR_IxA/exec?bridge=1" style="position:absolute;width:1px;height:1px;border:0;left:-9999px"></iframe>
+<iframe id="cloudBridge" title="Cloud sync connection" src="https://script.google.com/macros/s/AKfycbynGH7NoaDO2pD1UXarMtF-LXKwuKOlKA0FvcCrI6UGnYJVkPSAZuh3fFjxnOUR16Oj4w/exec?bridge=1" style="position:absolute;width:1px;height:1px;border:0;left:-9999px"></iframe>
 <main class="shell" id="appShell" style="display:none">
 <header class="topbar"><div class="brand"><div class="logo">S</div><div>STUDY HQ<small>ISC CLASS XII · 2027</small></div></div><div style="display:flex;gap:8px;align-items:center"><div class="pill" id="cloudStatus">☁ Connecting…</div><button class="action" id="logoutBtn">Log out</button></div></header>
 <section id="dashboard">
@@ -113,22 +113,36 @@ function setAuthMessage(message, good=false) {
 function setCloudStatus(message) {
   document.getElementById('cloudStatus').textContent = message;
 }
+let resolveBridgeReady;
+const bridgeReadyPromise = new Promise(resolve => { resolveBridgeReady = resolve; });
+
 function bridgeCall(action, payload={}) {
   return new Promise((resolve, reject) => {
     const requestId = 'r' + Date.now() + Math.random().toString(16).slice(2);
+    let finished = false;
     const timer = setTimeout(() => {
+      finished = true;
       window.removeEventListener('message', listener);
-      reject(new Error('Cloud connection timed out. Refresh and try again.'));
-    }, 20000);
+      reject(new Error('Cloud bridge did not respond. Refresh and try again.'));
+    }, 25000);
+
     function listener(event) {
       if (event.source !== bridgeFrame.contentWindow || !event.data || event.data.requestId !== requestId) return;
+      finished = true;
       clearTimeout(timer);
       window.removeEventListener('message', listener);
       if (event.data.error) reject(new Error(event.data.error));
       else resolve(event.data.result);
     }
-    window.addEventListener('message', listener);
-    bridgeFrame.contentWindow.postMessage({requestId, action, ...payload}, '*');
+
+    function sendRequest() {
+      if (finished) return;
+      window.addEventListener('message', listener);
+      bridgeFrame.contentWindow.postMessage({requestId, action, ...payload}, '*');
+    }
+
+    if (cloudReady) sendRequest();
+    else bridgeReadyPromise.then(sendRequest);
   });
 }
 function showApp() {
@@ -211,6 +225,7 @@ document.getElementById('logoutBtn').onclick = async () => {
 window.addEventListener('message', event => {
   if(event.source === bridgeFrame.contentWindow && event.data && event.data.type === 'bridge-ready') {
     cloudReady = true;
+    resolveBridgeReady();
     setCloudStatus('☁ Connected');
   }
 });
